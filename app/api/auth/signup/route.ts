@@ -1,7 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-// Mock database of users
-const users: Record<string, any> = {}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error("Missing Supabase environment variables")
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,29 +18,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "All fields are required" }, { status: 400 })
     }
 
-    // Check if user already exists
-    const userExists = Object.values(users).find((u) => u.email === email)
+    const { data: existingUser } = await supabase.from("users").select("id").eq("email", email).single()
 
-    if (userExists) {
+    if (existingUser) {
       return NextResponse.json({ error: "Email already registered" }, { status: 400 })
     }
 
-    // Create new user
-    const userId = Date.now().toString()
-    const newUser = {
-      id: userId,
-      fullName,
-      email,
-      password,
-      userType: userType || "individual",
-      createdAt: new Date(),
-      rewards: 0,
-      lives_saved: 0,
+    const { data: newUser, error } = await supabase
+      .from("users")
+      .insert([
+        {
+          full_name: fullName,
+          email,
+          password,
+          user_type: userType || "individual",
+          rewards: 0,
+          lives_saved: 0,
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    users[userId] = newUser
-
-    // Generate a simple token
     const token = Buffer.from(`${email}:${Date.now()}`).toString("base64")
 
     return NextResponse.json(
@@ -41,8 +50,8 @@ export async function POST(request: NextRequest) {
         user: {
           id: newUser.id,
           email: newUser.email,
-          fullName: newUser.fullName,
-          userType: newUser.userType,
+          fullName: newUser.full_name,
+          userType: newUser.user_type,
         },
         token,
       },
